@@ -9,11 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from datetime import datetime
+from datetime import date, datetime
 
 log = logging.getLogger(__name__)
 
@@ -35,8 +36,9 @@ class ParsedTask:
 
     external_id: str
     name: str
-    period: str  # 기준 시점 (예: '2025Q2')
+    as_of: date  # 기준일 (예: 2026-06-30). 공개 주기가 지자체마다 달라 날짜로 둔다
     source_url: str
+    period_label: str | None = None  # 원문 표기 (예: '2026년 6월 말 기준')
     field: str | None = None
     dept: str | None = None
     budget_raw: str | None = None
@@ -60,13 +62,19 @@ class NormalizedTask:
     normalized_status: str | None  # 매핑에 없는 원문 상태값은 추측하지 않고 None
 
 
+def status_key(raw: str) -> str:
+    """상태값 비교 키: 공백 제거 ('이행 후 계속추진' == '이행후계속추진')."""
+    return re.sub(r"\s+", "", raw)
+
+
 class Adapter(ABC):
     adapter_id: str
     region: str
     term: int
     base_url: str
     parser_type: str  # html | pdf | hwp | xlsx | api
-    # 원문 상태값 → 표준 5분류. 새 상태값이 나오면 경고 후 None으로 적재하고 매핑을 사람이 추가한다.
+    # 원문 상태값 → 표준 5분류 (공백 무시).
+    # 새 상태값은 경고 후 None으로 적재하고 사람이 매핑을 추가한다.
     status_mapping: dict[str, str] = {}
 
     @abstractmethod
@@ -79,7 +87,8 @@ class Adapter(ABC):
 
     def normalize(self, task: ParsedTask) -> NormalizedTask:
         raw = (task.raw_status or "").strip()
-        status = self.status_mapping.get(raw)
+        mapping = {status_key(k): v for k, v in self.status_mapping.items()}
+        status = mapping.get(status_key(raw))
         if raw and status is None:
             log.warning(
                 "[%s] 매핑되지 않은 상태값: %r (%s)", self.adapter_id, raw, task.external_id
@@ -113,5 +122,6 @@ __all__ = [
     "NormalizedTask",
     "ParsedTask",
     "RawDocument",
+    "status_key",
     "validate_mapping",
 ]

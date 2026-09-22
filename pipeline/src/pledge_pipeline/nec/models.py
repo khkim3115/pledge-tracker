@@ -51,6 +51,8 @@ def pledge_rows(item: dict, winner_id: str, term: int) -> list[dict]:
     """공약 응답 1건을 공약별 행으로 편다.
 
     응답 1건 = 후보자 1명: prmsOrd{i}, prmsRealmName{i}, prmsTitle{i}, prmmCont{i} (i = 1..N)
+    공약 본문은 문서상 prmsCont{i}이지만 실제 응답은 prmmCont{i}다 → 둘 다 읽는다.
+    prmsRealmName{i}은 대부분 비어 있다.
     """
     indexes = sorted(
         {int(m.group(1)) for k in item if (m := re.fullmatch(r"prmsTitle(\d+)", k))}
@@ -68,7 +70,7 @@ def pledge_rows(item: dict, winner_id: str, term: int) -> list[dict]:
                 "ord": int(ord_) if ord_ and ord_.isdigit() else i,
                 "field": _clean(item.get(f"prmsRealmName{i}")),
                 "title": title,
-                "content": _clean(item.get(f"prmmCont{i}")),
+                "content": _clean(item.get(f"prmmCont{i}") or item.get(f"prmsCont{i}")),
                 "source": "nec_api",
                 "term": term,
                 "raw": {
@@ -78,6 +80,7 @@ def pledge_rows(item: dict, winner_id: str, term: int) -> list[dict]:
                         f"prmsRealmName{i}",
                         f"prmsTitle{i}",
                         f"prmmCont{i}",
+                        f"prmsCont{i}",
                     )
                     if k in item
                 },

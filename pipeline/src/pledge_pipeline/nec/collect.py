@@ -23,8 +23,8 @@ from .models import SG_TYPES, TERMS, pledge_rows, winner_row
 
 log = logging.getLogger("nec.collect")
 
-# 민선8기 기준 기대 당선인 수 (적재 건수 검증용)
-EXPECTED_WINNERS = {3: 17, 4: 226, 11: 17}
+# 기대 당선인 수 (적재 건수 검증용). 민선9기는 광역 통합 등으로 달라 확정 후 추가한다.
+EXPECTED_WINNERS = {"20220601": {3: 17, 4: 226, 11: 17}}
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -127,10 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         client = NecClient(require("DATA_GO_KR_SERVICE_KEY"))
         summary = fetch(client, args.sg_id, types, out_dir)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        expected = EXPECTED_WINNERS.get(args.sg_id, {})
         for t in types:
-            got, expected = summary["winners_by_type"][SG_TYPES[t]], EXPECTED_WINNERS[t]
-            if got != expected:
-                log.warning("%s 당선인 수 %d ≠ 기대값 %d", SG_TYPES[t], got, expected)
+            got = summary["winners_by_type"][SG_TYPES[t]]
+            if t in expected and got != expected[t]:
+                log.warning("%s 당선인 수 %d ≠ 기대값 %d", SG_TYPES[t], got, expected[t])
 
     winners, pledges = build_rows(args.sg_id, out_dir)
     print(f"변환: 당선인 {len(winners)}명, 공약 {len(pledges)}건 → {out_dir}")

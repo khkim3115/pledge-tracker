@@ -83,7 +83,7 @@ create table adapters (
 
 create table status_mapping (
   adapter_id        text not null references adapters on delete cascade,
-  raw_status        text not null,
+  raw_status        text not null,           -- 원문 그대로 (보류/폐기도 구분해 보존)
   normalized_status text not null references normalized_statuses,
   primary key (adapter_id, raw_status)
 );
@@ -107,7 +107,8 @@ create table tasks (
 create table task_snapshots (
   snapshot_id       bigint generated always as identity primary key,
   task_id           text not null references tasks on delete cascade,
-  period            text not null,           -- 기준 시점 (예: '2025Q2', '2025H1')
+  as_of             date not null,           -- 기준일 (예: 2026-06-30). 공개 주기가 반기·분기·비정기로 섞여 날짜로 저장
+  period_label      text,                    -- 원문 표기 (예: '2026년 6월 말 기준')
   raw_status        text,
   normalized_status text references normalized_statuses,
   progress_rate     numeric(5, 2),           -- 진척률(%) 제공 시
@@ -115,10 +116,10 @@ create table task_snapshots (
   content_hash      text not null,           -- diff 감지: 변경분만 재처리
   source_url        text,
   fetched_at        timestamptz not null default now(),
-  unique (task_id, period, content_hash)
+  unique (task_id, as_of, content_hash)
 );
 
-create index task_snapshots_task_idx on task_snapshots (task_id, fetched_at desc);
+create index task_snapshots_task_idx on task_snapshots (task_id, as_of desc);
 
 -- ---------------------------------------------------------------------------
 -- AI 산출물

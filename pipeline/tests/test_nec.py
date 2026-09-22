@@ -132,3 +132,43 @@ def test_xml_auth_error_raises():
     session = FakeSession([FakeResponse(text=xml)])
     with pytest.raises(NecApiError, match="SERVICE_KEY_IS_NOT_REGISTERED_ERROR"):
         NecClient("k", session=session, delay=0).pledges("20220601", 3, "1")
+
+
+def test_unwrap_accepts_short_ok_code_and_error_03_as_empty():
+    from pledge_pipeline.nec.client import _unwrap
+
+    ok = {"response": {"header": {"resultCode": "00"}, "body": {"items": {"item": []}}}}
+    assert _unwrap(ok) == {"items": {"item": []}}
+    empty = {"response": {"header": {"resultCode": "ERROR-03", "resultMsg": "no data"}}}
+    assert _items(_unwrap(empty)) == []
+
+
+def test_unwrap_legacy_envelope_rooted_at_operation_name():
+    from pledge_pipeline.nec.client import _unwrap
+
+    legacy = {
+        "getWinnerInfoInqire": {
+            "header": {"resultCode": "INFO-00"},
+            "item": [{"huboid": "1"}],
+            "totalCount": 1,
+        }
+    }
+    body = _unwrap(legacy)
+    assert _items(body) == [{"huboid": "1"}] and body["totalCount"] == 1
+
+
+def test_unwrap_gateway_json_error():
+    from pledge_pipeline.nec.client import _unwrap
+
+    gw = {
+        "OpenAPI_ServiceResponse": {
+            "cmmMsgHeader": {"returnReasonCode": "22", "returnAuthMsg": "LIMITED_NUMBER_OF_SERVICE"}
+        }
+    }
+    with pytest.raises(NecApiError, match="LIMITED_NUMBER_OF_SERVICE"):
+        _unwrap(gw, 429)
+
+
+def test_pledge_content_falls_back_to_documented_field_name():
+    item = {"prmsOrd1": "1", "prmsTitle1": "제목", "prmsCont1": "문서상 필드명 본문"}
+    assert pledge_rows(item, "w", 9)[0]["content"] == "문서상 필드명 본문"

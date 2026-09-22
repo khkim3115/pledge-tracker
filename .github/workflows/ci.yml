@@ -28,3 +28,54 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+
+  migrations:
+    # Supabase 마이그레이션을 pgvector 포함 Postgres 17에 적용해 본다 (Supabase 전용 롤·스키마는 스텁)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Supabase stubs
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create schema extensions; create role anon; create role authenticated;"
+
+      - name: Apply migrations
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "::group::$f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Smoke test
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          insert into winners (winner_id, sg_id, sg_type, huboid, term, sido_name, sgg_name, region, name, raw)
+            values ('20220601-1', '20220601', 3, '1', 8, '가상도', '가상도', '가상도', '테스트', '{}');
+          insert into pledges (pledge_id, winner_id, ord, title, term) values ('20220601-1-1', '20220601-1', 1, '공약', 8);
+          insert into matches (pledge_id, task_id, method) values ('20220601-1-1', null, 'llm');
+          insert into judgments (pledge_id, verdict, model, prompt_version) values ('20220601-1-1', 'on_track', 'm', 'v0');
+          insert into judgments (pledge_id, verdict, model, prompt_version) values ('20220601-1-1', 'completed', 'm', 'v0');
+          SQL
+          # 최신 판정만 current_judgments에 노출
+          test "$(psql -tAc "select verdict from current_judgments")" = completed
+          # 모든 public 테이블에 RLS 적용
+          test "$(psql -tAc "select count(*) from pg_tables where schemaname = 'public' and not rowsecurity")" = 0
+          # NONE 매칭 중복은 거부돼야 한다 (unique nulls not distinct)
+          if psql -v ON_ERROR_STOP=1 -c "insert into matches (pledge_id, task_id, method) values ('20220601-1-1', null, 'llm');"; then
+            echo "::error::NONE 매칭 중복이 허용됨"; exit 1
+          fi

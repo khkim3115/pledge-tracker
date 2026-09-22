@@ -23,8 +23,9 @@ BASE_URL = "https://apis.data.go.kr/9760000"
 WINNER_URL = f"{BASE_URL}/WinnerInfoInqireService2/getWinnerInfoInqire"
 PLEDGE_URL = f"{BASE_URL}/ElecPrmsInfoInqireService/getCnddtElecPrmsInfoInqire"
 
-RESULT_OK = "INFO-00"
-RESULT_NO_DATA = "INFO-03"
+# 가이드와 실측 표기가 달라 둘 다 받는다 (docs/research/nec-api.md)
+RESULT_OK = frozenset({"INFO-00", "00"})
+RESULT_NO_DATA = frozenset({"INFO-03", "ERROR-03"})
 
 
 class NecApiError(RuntimeError):
@@ -35,16 +36,18 @@ class NecApiError(RuntimeError):
 
 
 def _items(body: dict) -> list[dict]:
-    """body.items.item은 결과가 1건이면 dict, 여러 건이면 list, 없으면 ''로 온다."""
+    """body.items.item → list. 1건이면 dict, 없으면 ''로 올 수 있다. 구형 봉투는 body.item."""
     items = body.get("items") or {}
     item = items.get("item") if isinstance(items, dict) else None
+    if item is None:
+        item = body.get("item")
     if item is None:
         return []
     return [item] if isinstance(item, dict) else list(item)
 
 
 def _xml_error(text: str) -> NecApiError | None:
-    """인증 오류 등은 resultType=json이어도 XML(OpenAPI_ServiceResponse)로 온다."""
+    """게이트웨이 오류(OpenAPI_ServiceResponse)가 XML로 온 경우. JSON이면 _unwrap이 처리한다."""
     try:
         root = ET.fromstring(text)
     except ET.ParseError:
@@ -57,6 +60,30 @@ def _xml_error(text: str) -> NecApiError | None:
         or text[:200]
     )
     return NecApiError(code, msg)
+
+
+def _unwrap(data: dict, status_code: int = 200) -> dict:
+    """JSON 응답에서 body를 꺼낸다. 오류면 NecApiError, 데이터 없음이면 빈 body."""
+    gateway = data.get("OpenAPI_ServiceResponse")
+    if gateway is not None:
+        hdr = gateway.get("cmmMsgHeader", gateway)
+        raise NecApiError(
+            str(hdr.get("returnReasonCode", f"HTTP{status_code}")),
+            hdr.get("returnAuthMsg") or hdr.get("errMsg") or str(hdr)[:200],
+        )
+    if "response" in data:
+        response = data["response"]
+    elif len(data) == 1:  # 구형: 루트 키가 오퍼레이션명 (예: getWinnerInfoInqire)
+        response = next(iter(data.values()))
+    else:
+        response = data
+    header = response.get("header") or {}
+    code = str(header.get("resultCode", ""))
+    if code in RESULT_NO_DATA:
+        return {"items": "", "totalCount": 0}
+    if code not in RESULT_OK or status_code >= 400:
+        raise NecApiError(code or f"HTTP{status_code}", header.get("resultMsg", str(data)[:200]))
+    return response.get("body", response)
 
 
 class NecClient:
@@ -101,17 +128,7 @@ class NecClient:
         except ValueError:
             err = _xml_error(resp.text) or NecApiError(f"HTTP{resp.status_code}", resp.text[:200])
             raise err from None
-        if resp.status_code >= 400:
-            raise NecApiError(f"HTTP{resp.status_code}", str(data)[:200])
-
-        response = data.get("response", data)
-        header = response.get("header", {})
-        code = header.get("resultCode", "")
-        if code == RESULT_NO_DATA:
-            return {"items": "", "totalCount": 0}
-        if code != RESULT_OK:
-            raise NecApiError(code, header.get("resultMsg", ""))
-        return response.get("body", {})
+        return _unwrap(data, resp.status_code)
 
     def _paginate(self, url: str, params: dict, page_size: int = 100) -> Iterator[dict]:
         page = 1
