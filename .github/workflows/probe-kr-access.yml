@@ -1,0 +1,49 @@
+name: probe-kr-access
+
+# GitHub Actions 러너(해외 IP)에서 공공 사이트 접근 가능 여부를 확인한다.
+# 차단 대상은 self-hosted runner(국내)로 분리한다 — docs/PROJECT.md 3.5, 11장.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/probe_access.py
+      - scripts/probe_targets.json
+      - .github/workflows/probe-kr-access.yml
+  schedule:
+    - cron: "41 0 1 * *" # 매월 1일 00:41 UTC — 차단 정책 변화 감시
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Runner location
+        run: curl -sS --max-time 10 https://ipinfo.io/json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("country"), d.get("region"), d.get("org"))' || true
+
+      - name: Probe
+        run: |
+          python scripts/probe_access.py \
+            --label "github-actions (${{ runner.os }})" \
+            --out probe-results.json \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: probe-results
+          path: probe-results.json
+          retention-days: 90
+
+      - if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}

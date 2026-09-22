@@ -1,0 +1,13 @@
+title = "pledge-tracker gitleaks config"
+
+[extend]
+useDefault = true
+
+# 공공데이터포털(data.go.kr) 인증키 — 약관상 제3자 공유 금지.
+# Encoding 키(%2B 등 포함)와 Decoding 키(+/= 포함), 신규 hex 키를 모두 잡는다.
+[[rules]]
+id = "data-go-kr-service-key"
+description = "data.go.kr service key"
+regex = '''(?i)(?:service_?key|data_go_kr_service_key)["']?\s*[:=]\s*["']?([A-Za-z0-9%+/=]{40,})'''
+secretGroup = 1
+keywords = ["servicekey", "service_key", "data_go_kr"]

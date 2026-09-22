@@ -1,0 +1,11 @@
+{
+  "targets": [
+    {"name": "data.go.kr 당선인정보 API (키 없음)", "url": "https://apis.data.go.kr/9760000/WinnerInfoInqireService2/getWinnerInfoInqire?pageNo=1&numOfRows=1&sgId=20220601&sgTypecode=3&resultType=json", "expect_status": [401]},
+    {"name": "data.go.kr 선거공약정보 API (키 없음)", "url": "https://apis.data.go.kr/9760000/ElecPrmsInfoInqireService/getCnddtElecPrmsInfoInqire?pageNo=1&numOfRows=1&sgId=20220601&sgTypecode=3&resultType=json", "expect_status": [401]},
+    {"name": "선관위 정책공약마당", "url": "https://policy.nec.go.kr/"},
+    {"name": "경기도청", "url": "https://www.gg.go.kr/"},
+    {"name": "서울시청", "url": "https://www.seoul.go.kr/"},
+    {"name": "서울 정보소통광장", "url": "https://opengov.seoul.go.kr/"},
+    {"name": "한국매니페스토실천본부", "url": "https://www.manifesto.or.kr/"}
+  ]
+}

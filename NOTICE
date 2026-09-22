@@ -1,0 +1,13 @@
+pledge-tracker (working title)
+Copyright 2026 pledge-tracker contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Trademarks: The service name and logos of this project are NOT licensed under
+the Apache License 2.0 (see Section 6 of the License). Forks and derivative
+services must use a different name and logo.
+
+Data: Datasets produced by this project (judgments, implementation rates, etc.)
+are licensed under CC BY 4.0 (see DATA_LICENSE.md). Source materials published
+by the National Election Commission and local governments remain subject to the
+terms of their respective publishers (e.g. KOGL / 공공누리 types).

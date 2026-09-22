@@ -1,0 +1,28 @@
+name: notify-failure
+description: 워크플로 실패를 Discord webhook으로 알린다 (조용한 실패 금지). webhook 미설정 시 경고만 남긴다.
+inputs:
+  webhook-url:
+    description: Discord webhook URL (secrets.DISCORD_WEBHOOK_URL)
+    required: false
+    default: ""
+  message:
+    description: 추가 메시지
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+        EXTRA: ${{ inputs.message }}
+      run: |
+        run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        if [ -z "$WEBHOOK_URL" ]; then
+          echo "::warning::DISCORD_WEBHOOK_URL 미설정 — 실패 알림을 보내지 못함: ${run_url}"
+          exit 0
+        fi
+        payload=$(python3 -c 'import json,os,sys; print(json.dumps({"content": sys.argv[1]}))' \
+          "❌ ${GITHUB_WORKFLOW} 실패 (${GITHUB_REF_NAME}) ${EXTRA}
+        ${run_url}")
+        curl -sS --max-time 15 -H 'Content-Type: application/json' -d "$payload" "$WEBHOOK_URL"

@@ -1,0 +1,144 @@
+"""선관위 API로 당선인·공약을 전수 수집해 원본 JSONL로 저장하고, 선택적으로 DB에 적재한다.
+
+# 수집 → data/raw/nec/20220601/{winners,pledges}.jsonl, summary.json
+python -m pledge_pipeline.nec.collect --sg-id 20220601
+# 수집 + DB 적재 / 기존 JSONL만 적재
+python -m pledge_pipeline.nec.collect --sg-id 20220601 --load
+python -m pledge_pipeline.nec.collect --sg-id 20220601 --load --skip-fetch
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+
+from ..settings import DATA_DIR, require
+from .client import NecApiError, NecClient
+from .models import SG_TYPES, TERMS, pledge_rows, winner_row
+
+log = logging.getLogger("nec.collect")
+
+# 민선8기 기준 기대 당선인 수 (적재 건수 검증용)
+EXPECTED_WINNERS = {3: 17, 4: 226, 11: 17}
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def fetch(client: NecClient, sg_id: str, types: list[int], out_dir: Path) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    winners_by_type: Counter[int] = Counter()
+    pledge_items = 0
+    no_pledges: list[str] = []
+    errors: list[dict] = []
+
+    with (
+        (out_dir / "winners.jsonl").open("w", encoding="utf-8") as wf,
+        (out_dir / "pledges.jsonl").open("w", encoding="utf-8") as pf,
+    ):
+        for sg_type in types:
+            winners = list(client.winners(sg_id, sg_type))
+            log.info("%s 당선인 %d명", SG_TYPES[sg_type], len(winners))
+            for item in winners:
+                winners_by_type[sg_type] += 1
+                wf.write(json.dumps({"sgTypecode": sg_type, **item}, ensure_ascii=False) + "\n")
+                huboid = str(item.get("huboid", ""))
+                label = f"{item.get('sdName', '')} {item.get('sggName', '')} {SG_TYPES[sg_type]}"
+                try:
+                    items = client.pledges(sg_id, sg_type, huboid)
+                except NecApiError as e:
+                    log.error("공약 조회 실패 %s (%s): %s", label, huboid, e)
+                    errors.append({"huboid": huboid, "label": label, "error": str(e)})
+                    continue
+                if not items:
+                    no_pledges.append(label)
+                for p in items:
+                    row = {"sgTypecode": sg_type, "huboid": huboid, **p}
+                    pf.write(json.dumps(row, ensure_ascii=False) + "\n")
+                    pledge_items += 1
+
+    summary = {
+        "sg_id": sg_id,
+        "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "winners_by_type": {SG_TYPES[t]: winners_by_type[t] for t in types},
+        "pledge_items": pledge_items,
+        "winners_without_pledges": no_pledges,
+        "errors": errors,
+    }
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return summary
+
+
+def build_rows(sg_id: str, in_dir: Path) -> tuple[list[dict], list[dict]]:
+    term = TERMS[sg_id]
+    winners = [
+        winner_row(w, sg_id, int(w["sgTypecode"])) for w in _read_jsonl(in_dir / "winners.jsonl")
+    ]
+    by_huboid = {w["huboid"]: w["winner_id"] for w in winners}
+    pledges: list[dict] = []
+    for item in _read_jsonl(in_dir / "pledges.jsonl"):
+        winner_id = by_huboid.get(str(item["huboid"]))
+        if winner_id is None:
+            log.warning("당선인 목록에 없는 공약 응답: huboid=%s", item["huboid"])
+            continue
+        pledges.extend(pledge_rows(item, winner_id, term))
+    return winners, pledges
+
+
+def load(sg_id: str, in_dir: Path) -> dict:
+    from ..db import connect, upsert  # DB 적재 시에만 psycopg 연결
+
+    winners, pledges = build_rows(sg_id, in_dir)
+    with connect() as conn:
+        n_w = upsert(conn, "winners", winners, conflict=["winner_id"])
+        n_p = upsert(conn, "pledges", pledges, conflict=["pledge_id"])
+        conn.commit()
+    return {"winners": n_w, "pledges": n_p}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="선관위 당선인·공약 수집")
+    ap.add_argument("--sg-id", required=True, choices=sorted(TERMS), help="선거ID")
+    ap.add_argument(
+        "--types",
+        default="3,4,11",
+        help="sgTypecode 목록 (3 시도지사, 4 구시군장, 11 교육감)",
+    )
+    ap.add_argument("--out", type=Path, help="원본 JSONL 경로 (기본: data/raw/nec/<sg-id>)")
+    ap.add_argument("--load", action="store_true", help="수집 후 DATABASE_URL로 적재")
+    ap.add_argument("--skip-fetch", action="store_true", help="API 호출 없이 기존 JSONL만 사용")
+    args = ap.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    sys.stdout.reconfigure(encoding="utf-8")
+    types = [int(t) for t in args.types.split(",")]
+    out_dir = args.out or DATA_DIR / "raw" / "nec" / args.sg_id
+
+    if not args.skip_fetch:
+        client = NecClient(require("DATA_GO_KR_SERVICE_KEY"))
+        summary = fetch(client, args.sg_id, types, out_dir)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        for t in types:
+            got, expected = summary["winners_by_type"][SG_TYPES[t]], EXPECTED_WINNERS[t]
+            if got != expected:
+                log.warning("%s 당선인 수 %d ≠ 기대값 %d", SG_TYPES[t], got, expected)
+
+    winners, pledges = build_rows(args.sg_id, out_dir)
+    print(f"변환: 당선인 {len(winners)}명, 공약 {len(pledges)}건 → {out_dir}")
+
+    if args.load:
+        print("적재:", load(args.sg_id, out_dir))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
