@@ -1,9 +1,11 @@
 name: supabase-keepalive
 
-# Supabase Free 플랜은 7일 유휴 시 일시정지된다. 스케줄 실행은 지연·누락될 수 있어 주 2회 핑한다.
+# Supabase Free 플랜은 최근 1주일 DB 활동이 부족하면 일시정지된다.
+# 공식 문서 기준 "매일 몇 번의 요청"이면 충분 → 매일 실행. 스케줄은 지연·누락될 수 있다.
+# 공개 레포는 60일간 커밋이 없으면 스케줄 워크플로가 자동 비활성화되니 Actions 탭에서 재활성화할 것.
 on:
   schedule:
-    - cron: "23 3 * * 1,4" # 월·목 03:23 UTC (12:23 KST)
+    - cron: "23 3 * * *" # 매일 03:23 UTC (12:23 KST)
   workflow_dispatch:
 
 permissions:
@@ -16,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Ping Supabase REST (public read)
+      - name: Ping Supabase REST (public read, 행이 있는 테이블)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
@@ -25,14 +27,16 @@ jobs:
             echo "::warning::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY 시크릿 미설정 — 핑 건너뜀"
             exit 0
           fi
-          code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 30 \
-            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
-            "${SUPABASE_URL}/rest/v1/adapters?select=adapter_id&limit=1")
-          echo "HTTP ${code}"
-          if [ "$code" != "200" ]; then
-            head -c 500 /tmp/body; echo
-            exit 1
-          fi
+          for table in normalized_statuses winners pledges; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 30 \
+              -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+              "${SUPABASE_URL}/rest/v1/${table}?select=*&limit=1")
+            echo "${table}: HTTP ${code}"
+            if [ "$code" != "200" ] || [ "$(head -c 2 /tmp/body)" = "[]" ]; then
+              head -c 500 /tmp/body; echo
+              exit 1
+            fi
+          done
 
       - if: failure()
         uses: ./.github/actions/notify-failure

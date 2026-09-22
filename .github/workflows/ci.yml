@@ -50,8 +50,17 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Supabase stubs
+        # Supabase 기본 권한(anon/authenticated에 ALL)까지 재현해야 권한 최소화 구문이 빠졌을 때 CI가 잡는다
         run: |
-          psql -v ON_ERROR_STOP=1 -c "create schema extensions; create role anon; create role authenticated;"
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create schema extensions;
+          create role anon nologin;
+          create role authenticated nologin;
+          create role service_role nologin bypassrls;
+          alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+          alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+          alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+          SQL
 
       - name: Apply migrations
         run: |
@@ -88,6 +97,14 @@ jobs:
               echo "::error::anon 권한 과다: $sql"; exit 1
             fi
           done
+          # postgres가 public에 새로 만드는 객체의 기본 권한에 anon/authenticated가 남아 있으면 안 된다
+          test "$(psql -tAc "select count(*) from pg_default_acl d join pg_namespace n on n.oid = d.defaclnamespace, aclexplode(d.defaclacl) a where n.nspname = 'public' and d.defaclrole = 'postgres'::regrole and a.grantee in ('anon'::regrole, 'authenticated'::regrole)")" = 0
+          # public 스키마 함수는 anon이 실행할 수 없어야 한다. 공개 RPC가 생기면 allowed_rpc에 이름 추가
+          allowed_rpc="''"
+          exposed=$(psql -tAc "select string_agg(p.oid::regprocedure::text, ', ') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'EXECUTE') and p.proname not in (${allowed_rpc})")
+          if [ -n "$exposed" ]; then
+            echo "::error::anon이 실행 가능한 함수: $exposed (revoke execute on function ... from public, anon, authenticated 필요)"; exit 1
+          fi
           # NONE 매칭 중복은 거부돼야 한다 (unique nulls not distinct)
           if psql -v ON_ERROR_STOP=1 -c "insert into matches (pledge_id, task_id, method) values ('20220601-1-1', null, 'llm');"; then
             echo "::error::NONE 매칭 중복이 허용됨"; exit 1

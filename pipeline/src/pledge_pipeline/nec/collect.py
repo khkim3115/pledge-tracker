@@ -103,18 +103,44 @@ def build_rows(sg_id: str, in_dir: Path) -> tuple[list[dict], list[dict]]:
             log.warning("당선인 목록에 없는 공약 응답: huboid=%s", item["huboid"])
             continue
         pledges.extend(pledge_rows(item, winner_id, term))
+
+    dup = [k for k, n in Counter((p["winner_id"], p["ord"]) for p in pledges).items() if n > 1]
+    if dup:
+        raise ValueError(f"(winner_id, ord) 중복 {len(dup)}건 — 적재 중단: {dup[:5]}")
+
+    # fetched_at = API 수집 시점 (재적재 시에도 갱신)
+    summary = in_dir / "summary.json"
+    fetched_at = (
+        json.loads(summary.read_text(encoding="utf-8")).get("fetched_at")
+        if summary.exists()
+        else None
+    ) or datetime.now(UTC).isoformat(timespec="seconds")
+    for row in (*winners, *pledges):
+        row["fetched_at"] = fetched_at
     return winners, pledges
 
 
 def load(sg_id: str, in_dir: Path) -> dict:
-    from ..db import connect, upsert  # DB 적재 시에만 psycopg 연결
+    from ..db import connect, find_stale, upsert  # DB 적재 시에만 psycopg 연결
 
     winners, pledges = build_rows(sg_id, in_dir)
     with connect() as conn:
         n_w = upsert(conn, "winners", winners, conflict=["winner_id"])
         n_p = upsert(conn, "pledges", pledges, conflict=["pledge_id"])
+        stale = find_stale(
+            conn,
+            "pledges",
+            "pledge_id",
+            "winner_id",
+            [w["winner_id"] for w in winners],
+            [p["pledge_id"] for p in pledges],
+        )
         conn.commit()
-    return {"winners": n_w, "pledges": n_p}
+    if stale:
+        log.warning(
+            "원천 응답에 없는 기존 공약 %d건 (삭제하지 않음, 확인 필요): %s", len(stale), stale
+        )
+    return {"winners": n_w, "pledges": n_p, "stale_pledges": len(stale)}
 
 
 def main(argv: list[str] | None = None) -> int:

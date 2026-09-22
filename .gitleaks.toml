@@ -11,3 +11,19 @@ description = "data.go.kr service key"
 regex = '''(?i)(?:service_?key|data_go_kr_service_key)["']?\s*[:=]\s*["']?([A-Za-z0-9%+/=]{40,})'''
 secretGroup = 1
 keywords = ["servicekey", "service_key", "data_go_kr"]
+
+# PostgreSQL 접속 문자열의 비밀번호 (DATABASE_URL). '<password>' 같은 자리표시자는 제외.
+[[rules]]
+id = "postgres-uri-password"
+description = "PostgreSQL connection string with password"
+regex = '''postgres(?:ql)?://[^:\s/@]+:([^@\s<>]{6,})@'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://"]
+
+# Supabase secret API key (RLS 우회 권한). publishable 키는 공개용이라 제외.
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret API key"
+regex = '''(sb_secret_[A-Za-z0-9_-]{20,})'''
+secretGroup = 1
+keywords = ["sb_secret_"]

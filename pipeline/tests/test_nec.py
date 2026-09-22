@@ -183,3 +183,43 @@ def test_no_pledge_reason_uncontested_vs_not_submitted():
 
     assert no_pledge_reason({"dugsu": "0"}) == "무투표 당선"
     assert no_pledge_reason({"dugsu": "69165"}).startswith("공약서 미제출")
+
+
+def test_pledge_id_uses_normalized_ord():
+    item = {"prmsOrd1": "１", "prmsTitle1": "전각 숫자", "prmsOrd2": "2", "prmsTitle2": "정상"}
+    rows = pledge_rows(item, "w", 9)
+    assert [(r["pledge_id"], r["ord"]) for r in rows] == [("w-1", 1), ("w-2", 2)]
+
+
+def test_build_rows_rejects_duplicate_ord_and_sets_fetched_at(tmp_path):
+    import json
+
+    from pledge_pipeline.nec.collect import build_rows
+
+    winner = {**WINNER, "sgTypecode": 4}
+    (tmp_path / "winners.jsonl").write_text(json.dumps(winner, ensure_ascii=False), "utf-8")
+    (tmp_path / "summary.json").write_text('{"fetched_at": "2026-09-22T12:00:00+00:00"}', "utf-8")
+    ok = {"huboid": "100000001", "prmsOrd1": "1", "prmsTitle1": "a"}
+    (tmp_path / "pledges.jsonl").write_text(json.dumps(ok), "utf-8")
+    winners, pledges = build_rows("20220601", tmp_path)
+    assert winners[0]["fetched_at"] == pledges[0]["fetched_at"] == "2026-09-22T12:00:00+00:00"
+
+    dup = {"huboid": "100000001", "prmsOrd1": "1", "prmsTitle1": "a", "prmsTitle2": "b"}
+    dup["prmsOrd2"] = "1"
+    (tmp_path / "pledges.jsonl").write_text(json.dumps(dup), "utf-8")
+    with pytest.raises(ValueError, match="중복"):
+        build_rows("20220601", tmp_path)
+
+
+def test_conninfo_sslmode_defaults_without_weakening_stricter_settings(monkeypatch):
+    from psycopg.conninfo import conninfo_to_dict
+
+    from pledge_pipeline.db import conninfo
+
+    base = "postgresql://u:p@h.example:5432/postgres"
+    monkeypatch.delenv("PGSSLMODE", raising=False)
+    assert conninfo_to_dict(conninfo(base))["sslmode"] == "require"
+    assert conninfo_to_dict(conninfo(base + "?sslmode=verify-full"))["sslmode"] == "verify-full"
+    assert conninfo_to_dict(conninfo(base + "?sslrootcert=system"))["sslmode"] == "verify-full"
+    monkeypatch.setenv("PGSSLMODE", "verify-full")
+    assert "sslmode" not in conninfo_to_dict(conninfo(base))  # libpq가 PGSSLMODE를 쓴다

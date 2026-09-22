@@ -62,12 +62,14 @@ def pledge_rows(item: dict, winner_id: str, term: int) -> list[dict]:
         title = _clean(item.get(f"prmsTitle{i}"))
         if not title:
             continue
-        ord_ = _clean(item.get(f"prmsOrd{i}"))
+        # pledge_id와 ord는 같은 정규화 값에서 만든다 (숫자가 아니면 슬롯 번호)
+        ord_raw = _clean(item.get(f"prmsOrd{i}"))
+        ord_ = int(ord_raw) if ord_raw and ord_raw.isascii() and ord_raw.isdigit() else i
         rows.append(
             {
-                "pledge_id": f"{winner_id}-{ord_ or i}",
+                "pledge_id": f"{winner_id}-{ord_}",
                 "winner_id": winner_id,
-                "ord": int(ord_) if ord_ and ord_.isdigit() else i,
+                "ord": ord_,
                 "field": _clean(item.get(f"prmsRealmName{i}")),
                 "title": title,
                 "content": _clean(item.get(f"prmmCont{i}") or item.get(f"prmsCont{i}")),
