@@ -229,8 +229,8 @@ Q&A 비용 가드: 핵심 지표는 **LLM 도달률**(전체 질의 중 SQL 카�
 
 ## 12. 진행 체크리스트
 
-- [x] 공공데이터포털: 선거공약 API + 당선인정보 API 활용신청
-- [ ] Supabase 프로젝트 생성(서울 리전), pgvector 활성화, 7장 스키마 마이그레이션 — 마이그레이션 초안: `supabase/migrations/` (CI에서 PG17+pgvector로 적용 검증)
-- [ ] 민선8기 전국 공약 수집 스크립트 작성·실행 → 적재 건수 확인 — 스크립트 작성 완료(`pledge_pipeline.nec.collect`), 실행 대기. data.go.kr가 해외 IP에서 응답하지 않아 **국내에서 실행**
+- [x] 공공데이터포털: 선거공약 API + 당선인정보 API 활용신청 (당선인정보는 2026-09-22 추가 신청·승인)
+- [x] Supabase 프로젝트 생성(서울 리전), pgvector 활성화, 7장 스키마 마이그레이션 — `pledge-tracker` (ap-northeast-2), `supabase/migrations/20260922120158_init.sql` 적용, 유휴 방지 핑 동작 확인 — 2026-09-22
+- [ ] 민선8기 전국 공약 수집 스크립트 작성·실행 → 적재 건수 확인 — 수집 완료(8기 당선인 260·공약 1,248 / 9기 259·1,280, [nec-api.md 6장](research/nec-api.md)), **DB 적재 대기**(`DATABASE_URL`). data.go.kr가 해외 IP에서 응답하지 않아 국내에서 실행
 - [x] 경기도·서울시 이행현황 페이지 구조 조사(형식, URL 패턴, robots.txt, 해외 IP 차단 여부, 공공누리 유형) — [adapter-survey.md](research/adapter-survey.md), [access-probe.md](research/access-probe.md), [nec-api.md](research/nec-api.md). 공공누리·서울 원본파일 형식은 후속 확인
 - [x] GitHub **public** 레포 생성: LICENSE(Apache-2.0) + .env.example + gitleaks pre-commit, 이 문서를 docs/PROJECT.md로 커밋, Actions 핑 워크플로 + 접근성 프로브(probe-kr-access.yml) 추가 — 2026-09-22

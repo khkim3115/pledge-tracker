@@ -190,3 +190,29 @@
 - kimbomi-site 당선인과 공약 JSON 프록시, 2026 데이터: https://github.com/kimbomi0603/kimbomi-site/blob/HEAD/api/contract.js , https://github.com/kimbomi0603/kimbomi-site/blob/HEAD/data/pledge.json
 - cow-coding/V.O.T.E (`prmmCont1` 출력, 2021): https://github.com/cow-coding/V.O.T.E/blob/HEAD/data_files/election_database.ipynb
 - Encoding/Decoding 키 안내: https://wikidocs.net/268599 , https://datadoctorblog.com/2025/03/18/Py-Crawling-API-gov-Keys/
+
+---
+
+## 6. 실제 수집 결과 (2026-09-22, 국내 PC에서 실행)
+
+`python -m pledge_pipeline.nec.collect --sg-id <sgId>` — 오류 0건.
+
+| 항목 | 민선8기 (20220601) | 민선9기 (20260603) |
+| :- | -: | -: |
+| 당선인: 시도지사 / 구시군장 / 교육감 | 17 / 226 / 17 = **260** | 16 / 227 / 16 = **259** |
+| 공약 응답이 있는 당선인 | 250 | 256 |
+| 공약 수 | **1,248** (당선인당 5개, 1명만 3개) | **1,280** (전원 5개) |
+| 공약 본문(`prmmCont`) 비어 있음 | 0 | 0 |
+| 공약 분야(`prmsRealmName`) 채워짐 | 0 | 5 |
+| 본문 길이 중앙값 / 최대 | 505 / 4,205자 | 616 / 10,750자 |
+| 정당 공란 | 17 (= 교육감) | 16 (= 교육감) |
+
+- 8기 공약 1,248건은 제3자 수집 결과(polis-korea)와 같은 수치다.
+- **공약이 없는 당선인**의 사유는 수집기가 `summary.json`에 추정해 적는다.
+  - 8기 10명: 무투표 당선(득표수 0) 6명, 경선 당선인데 공약 없음 4명. 선거공약서는 임의 제출이라 미제출로 추정한다.
+  - 9기 3명: 모두 무투표 당선.
+  - 방법론 페이지에 "공약 데이터 없음" 사유로 표시할 것.
+- **시도명 표기**
+  - 8기는 당시 명칭(`강원도`, `전라북도`)을 쓴다.
+  - 9기는 광역·교육감에 `전남광주통합특별시`, 기초에 `광주광역시`/`전라남도`가 섞여 시도명이 18종이다. 지역별로 묶거나 기수를 넘어 비교하려면 시도 정규화 규칙이 필요하다.
+- 키 활용신청은 **API별로 따로** 한다. 선거공약만 승인된 상태에서 당선인정보를 호출하면 게이트웨이 코드 `30`(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)이 온다. 승인 직후에는 몇 분 안에 반영됐다.

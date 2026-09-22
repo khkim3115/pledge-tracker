@@ -176,3 +176,10 @@ def test_unwrap_gateway_json_error():
 def test_pledge_content_falls_back_to_documented_field_name():
     item = {"prmsOrd1": "1", "prmsTitle1": "제목", "prmsCont1": "문서상 필드명 본문"}
     assert pledge_rows(item, "w", 9)[0]["content"] == "문서상 필드명 본문"
+
+
+def test_no_pledge_reason_uncontested_vs_not_submitted():
+    from pledge_pipeline.nec.collect import no_pledge_reason
+
+    assert no_pledge_reason({"dugsu": "0"}) == "무투표 당선"
+    assert no_pledge_reason({"dugsu": "69165"}).startswith("공약서 미제출")

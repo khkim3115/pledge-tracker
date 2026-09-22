@@ -23,8 +23,18 @@ from .models import SG_TYPES, TERMS, pledge_rows, winner_row
 
 log = logging.getLogger("nec.collect")
 
-# 기대 당선인 수 (적재 건수 검증용). 민선9기는 광역 통합 등으로 달라 확정 후 추가한다.
-EXPECTED_WINNERS = {"20220601": {3: 17, 4: 226, 11: 17}}
+# 기대 당선인 수 (적재 건수 검증용). 민선9기는 광주·전남 통합(광역 16)과 기초 개편(227)이 반영됨.
+EXPECTED_WINNERS = {
+    "20220601": {3: 17, 4: 226, 11: 17},
+    "20260603": {3: 16, 4: 227, 11: 16},
+}
+
+
+def no_pledge_reason(winner: dict) -> str:
+    """공약 응답이 없는 당선인의 사유 추정. 득표수 0 = 무투표 당선(선거운동·공약서 없음)."""
+    if str(winner.get("dugsu", "")).strip() in ("", "0"):
+        return "무투표 당선"
+    return "공약서 미제출 추정 (선거공약서는 임의 제출)"
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -36,7 +46,7 @@ def fetch(client: NecClient, sg_id: str, types: list[int], out_dir: Path) -> dic
     out_dir.mkdir(parents=True, exist_ok=True)
     winners_by_type: Counter[int] = Counter()
     pledge_items = 0
-    no_pledges: list[str] = []
+    no_pledges: list[dict] = []
     errors: list[dict] = []
 
     with (
@@ -58,7 +68,9 @@ def fetch(client: NecClient, sg_id: str, types: list[int], out_dir: Path) -> dic
                     errors.append({"huboid": huboid, "label": label, "error": str(e)})
                     continue
                 if not items:
-                    no_pledges.append(label)
+                    no_pledges.append(
+                        {"huboid": huboid, "label": label, "reason": no_pledge_reason(item)}
+                    )
                 for p in items:
                     row = {"sgTypecode": sg_type, "huboid": huboid, **p}
                     pf.write(json.dumps(row, ensure_ascii=False) + "\n")
