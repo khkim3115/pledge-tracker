@@ -28,9 +28,19 @@ RESULT_OK = frozenset({"INFO-00", "00"})
 RESULT_NO_DATA = frozenset({"INFO-03", "ERROR-03"})
 
 
+# data.go.kr 게이트웨이 returnReasonCode → 조치 안내
+GATEWAY_HINTS = {
+    "20": "서비스 접근 거부 — 활용신청 상태 확인",
+    "22": "일일 트래픽 한도 초과 — 내일 재시도하거나 운영계정 전환",
+    "30": "등록되지 않은 서비스키 — 이 API의 활용신청 승인 여부 확인 (승인 직후 동기화 최대 1시간)",
+    "31": "활용기간 만료 — data.go.kr에서 연장 신청",
+}
+
+
 class NecApiError(RuntimeError):
     def __init__(self, code: str, message: str):
-        super().__init__(f"{code}: {message}")
+        hint = GATEWAY_HINTS.get(code)
+        super().__init__(f"{code}: {message}" + (f" ({hint})" if hint else ""))
         self.code = code
         self.message = message
 
@@ -53,9 +63,10 @@ def _xml_error(text: str) -> NecApiError | None:
     except ET.ParseError:
         return None
     code = root.findtext(".//returnReasonCode") or root.findtext(".//resultCode") or "XML"
+    # returnAuthMsg(한글)는 서버에서 이미 깨진 문자로 오므로 영문 errMsg를 우선한다
     msg = (
-        root.findtext(".//returnAuthMsg")
-        or root.findtext(".//errMsg")
+        root.findtext(".//errMsg")
+        or root.findtext(".//returnAuthMsg")
         or root.findtext(".//resultMsg")
         or text[:200]
     )
@@ -69,7 +80,7 @@ def _unwrap(data: dict, status_code: int = 200) -> dict:
         hdr = gateway.get("cmmMsgHeader", gateway)
         raise NecApiError(
             str(hdr.get("returnReasonCode", f"HTTP{status_code}")),
-            hdr.get("returnAuthMsg") or hdr.get("errMsg") or str(hdr)[:200],
+            hdr.get("errMsg") or hdr.get("returnAuthMsg") or str(hdr)[:200],
         )
     if "response" in data:
         response = data["response"]

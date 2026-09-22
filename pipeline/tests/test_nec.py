@@ -130,7 +130,7 @@ def test_xml_auth_error_raises():
         "<returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>"
     )
     session = FakeSession([FakeResponse(text=xml)])
-    with pytest.raises(NecApiError, match="SERVICE_KEY_IS_NOT_REGISTERED_ERROR"):
+    with pytest.raises(NecApiError, match="SERVICE ERROR.*활용신청"):
         NecClient("k", session=session, delay=0).pledges("20220601", 3, "1")
 
 
@@ -162,11 +162,15 @@ def test_unwrap_gateway_json_error():
 
     gw = {
         "OpenAPI_ServiceResponse": {
-            "cmmMsgHeader": {"returnReasonCode": "22", "returnAuthMsg": "LIMITED_NUMBER_OF_SERVICE"}
+            "cmmMsgHeader": {
+                "returnReasonCode": "30",
+                "errMsg": "SERVICE_KEY_IS_NOT_REGISTERED_ERROR",
+                "returnAuthMsg": "���",
+            }
         }
     }
-    with pytest.raises(NecApiError, match="LIMITED_NUMBER_OF_SERVICE"):
-        _unwrap(gw, 429)
+    with pytest.raises(NecApiError, match="SERVICE_KEY_IS_NOT_REGISTERED_ERROR.*활용신청"):
+        _unwrap(gw, 403)
 
 
 def test_pledge_content_falls_back_to_documented_field_name():
