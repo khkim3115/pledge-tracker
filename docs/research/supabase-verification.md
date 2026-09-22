@@ -40,15 +40,26 @@
 | gitleaks 기본 규칙이 Postgres URI 비밀번호와 `sb_secret_` 키를 잡지 못한다 | `.gitleaks.toml`에 규칙 2개를 추가했다(가짜 값으로 탐지 확인, 자리표시자는 제외) |
 | 중복 인덱스 2개(unique 제약 인덱스와 겹침) | 마이그레이션 002에서 제거한다. `judgments` 인덱스는 `current_judgments` 정렬에 맞췄다 |
 
-## 대시보드에서 할 일 (운영자)
+## 대시보드 설정 (운영자 조치, 2026-09-22 반영 확인)
 
-보안 설정이라 코드로 바꾸지 않았다. 대시보드에서 직접 설정한다.
+보안 설정이라 코드로 바꾸지 않고 대시보드에서 직접 설정했다. 반영 여부는 외부 호출로 확인했다.
 
-1. **Database → SSL Configuration → Enforce SSL on incoming connections**: 평문 접속을 거부한다.
-2. **Database → Reset database password**: 대시보드가 생성한 무작위 비밀번호를 쓴다. 바꾼 뒤 로컬 `.env`의 `DATABASE_URL`도 갱신한다.
-3. **Authentication → Sign In / Providers → Allow new users to sign up 끄기**: 현재 로그인 기능이 없다. 열어 두면 누구나 가입 요청으로 메일 한도를 소모할 수 있다.
-4. **Settings → API Keys → Legacy API keys 비활성화**: 레포는 `sb_publishable_` 키만 쓴다. legacy 키가 켜져 있으면 만료 10년짜리 service_role JWT도 유효하다.
-5. (선택) **API Settings → Exposed schemas에서 `graphql_public` 제거**: GraphQL을 쓰지 않는다면 뺀다.
+| 설정 | 상태 | 확인 방법 |
+| :- | :- | :- |
+| Database → SSL Configuration → Enforce SSL | ✅ | 평문(`sslmode=disable`) 접속이 인증 전에 `FATAL: (ESSLREQUIRED)`로 거부됨 |
+| Database 비밀번호를 대시보드 생성값으로 재설정 | ✅ | 새 `DATABASE_URL`로 TLS 접속 성공(`pg_stat_ssl.ssl = true`) |
+| Authentication → 신규 가입 차단 | ✅ | `/auth/v1/settings`에서 `disable_signup = true`, 가입 요청 시 422 `signup_disabled` |
+| Settings → API Keys → Legacy(JWT) 키 비활성화 | ✅ | legacy anon JWT로 요청하면 401 "Legacy API keys are disabled". 같은 방식의 service_role JWT도 함께 무효 |
+| Data API → Exposed schemas에서 `graphql_public` 제거 (선택) | 미적용 | 노출 스키마가 여전히 `public, graphql_public`. pg_graphql이 설치되어 있지 않아 실제로 노출되는 것은 없다 |
+
+조치 후 회귀 점검 결과:
+- 공개 키로 공개 테이블을 읽으면 200이다.
+- 내부 테이블 조회와 쓰기·삭제는 401이다.
+- anon/authenticated 테이블 권한은 SELECT 12건 그대로다.
+- postgres 역할의 public 기본 권한에는 anon/authenticated가 없다.
+- `supabase_admin`의 기본 권한은 플랫폼 기본값이라 남아 있다. supabase_admin이 만드는 객체(예: 대시보드에서 public에 설치하는 확장)에만 적용된다. 따라서 확장은 항상 `extensions` 스키마에 설치한다.
+
+주의: 대시보드 Data API 설정의 **Exposed tables**가 "0 of 16"으로 보이는 것은 anon에게 SELECT만 부여했기 때문이다. 조회는 정상이다. 여기서 테이블을 켜면 권한 최소화가 되돌려질 수 있으므로 쓰지 않는다. 공개 범위는 마이그레이션으로만 바꾼다.
 
 ## 참고
 
