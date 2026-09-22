@@ -259,3 +259,20 @@ begin
   end loop;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 테이블 권한 최소화: Supabase 기본값은 anon/authenticated에 ALL을 부여한다.
+-- RLS와 별개로 권한 자체를 공개 테이블 SELECT로 좁히고, 이후 생성 테이블은 기본 비공개로 둔다
+-- (새 테이블을 공개하려면 해당 마이그레이션에서 grant select를 명시).
+-- ---------------------------------------------------------------------------
+
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+
+grant select on
+  normalized_statuses, winners, pledges, adapters, status_mapping, tasks, task_snapshots,
+  matches, judgments, current_judgments, evidence_chunks, manifesto_grades
+to anon, authenticated;
+
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;

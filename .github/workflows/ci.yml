@@ -75,6 +75,18 @@ jobs:
           test "$(psql -tAc "select verdict from current_judgments")" = completed
           # 모든 public 테이블에 RLS 적용
           test "$(psql -tAc "select count(*) from pg_tables where schemaname = 'public' and not rowsecurity")" = 0
+          # anon: 공개 테이블 읽기 가능, 쓰기·내부 테이블 접근 불가
+          test "$(psql -tAc "set role anon; select count(*) from normalized_statuses")" = 5
+          test "$(psql -tAc "set role anon; select count(*) from current_judgments")" = 1
+          for sql in \
+            "insert into adapters (adapter_id, region, term, base_url, parser_type) values ('x', 'x', 9, 'x', 'html')" \
+            "delete from pledges" \
+            "select * from qa_cache" \
+            "select * from golden_set"; do
+            if psql -v ON_ERROR_STOP=1 -c "set role anon; $sql" 2>/dev/null; then
+              echo "::error::anon 권한 과다: $sql"; exit 1
+            fi
+          done
           # NONE 매칭 중복은 거부돼야 한다 (unique nulls not distinct)
           if psql -v ON_ERROR_STOP=1 -c "insert into matches (pledge_id, task_id, method) values ('20220601-1-1', null, 'llm');"; then
             echo "::error::NONE 매칭 중복이 허용됨"; exit 1
